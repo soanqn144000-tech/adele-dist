@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>업무 레이더</title>
+<!--
+  ══════════════════════════════════════════════════════════════
+  이 화면은 읽기 전용이다. 사람이 업무를 입력하지 않는다.
+  radar.py 가 텔레그램을 훑어 남긴 것을 그대로 보여준다.
+
+  누른 것(완료·숨김)은 따로 저장한다. 목록은 세 시간마다 통째로 새로 쓰이므로,
+  상태를 같이 두면 눌러놓은 완료가 되살아난다.
+  ══════════════════════════════════════════════════════════════
+-->
+<style>
+:root{
+  --ground:#F3F8F4; --surface:#fff; --sunk:#eef4ef;
+  --ink:#0e2a20; --body:#33493e; --mute:#6b7d73; --faint:#93a89b;
+  --line:#dbe6dd; --line-soft:#e8efe9;
+  --green:#01934E; --gold:#9a7420;
+  --red:#C4442F; --orange:#C05A2E; --yellow:#9A7B22;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+  --ground:#0b211a; --surface:#12302604; --surface:#123026; --sunk:#0e2a20;
+  --ink:#eaf3ec; --body:#c3d5c8; --mute:#8fa79a; --faint:#6f8a7c;
+  --line:#23443a; --line-soft:#1b3830;
+  --green:#3ec483; --gold:#d8b15e;
+  --red:#f0705a; --orange:#e08a52; --yellow:#d8b15e;
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--body);
+  font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased}
+.wrap{max-width:56rem;margin:0 auto;padding:2.5rem 1.25rem 5rem}
+
+header{display:flex;justify-content:space-between;align-items:flex-end;
+  gap:1rem;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:1.1rem}
+h1{margin:0;color:var(--ink);font-size:1.75rem;font-weight:800;letter-spacing:-.02em}
+.sub{margin:.2rem 0 0;font-size:.85rem;color:var(--mute)}
+.live{font-size:.78rem;font-weight:700;color:var(--green);display:flex;align-items:center;gap:.35rem}
+.live .dot{width:.45rem;height:.45rem;border-radius:50%;background:var(--green)}
+.live.off{color:var(--mute)} .live.off .dot{background:var(--faint)}
+
+.tools{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:1.1rem 0 .3rem}
+button{font:inherit;font-size:.83rem;font-weight:700;padding:.35rem .8rem;
+  border-radius:.35rem;border:1px solid var(--line);background:var(--surface);
+  color:var(--body);cursor:pointer}
+button:hover{border-color:var(--green);color:var(--ink)}
+button.on{background:var(--green);color:#fff;border-color:var(--green)}
+.spacer{flex:1}
+
+.bucket{margin:2rem 0 0}
+.bhead{display:flex;align-items:center;gap:.5rem;font-size:.95rem;font-weight:800;
+  color:var(--ink);margin:0 0 .7rem}
+.bhead .cnt{font-size:.78rem;font-weight:700;color:var(--mute)}
+
+.item{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--bc);
+  border-radius:.5rem;padding:.85rem 1rem;margin:0 0 .55rem;
+  display:grid;grid-template-columns:1fr auto;gap:.4rem 1rem}
+.item.done{opacity:.5}
+.t{grid-column:1;margin:0;color:var(--ink);font-size:1rem;font-weight:700;line-height:1.4}
+.t s{color:var(--mute);text-decoration-thickness:1px}
+.wait{grid-column:1;margin:0;font-size:.85rem;font-weight:700;color:var(--orange)}
+.d{grid-column:1;margin:0;font-size:.88rem;color:var(--body)}
+.src{grid-column:1;margin:.15rem 0 0;font-size:.76rem;color:var(--faint)}
+.right{grid-column:2;grid-row:1/3;text-align:right;display:flex;
+  flex-direction:column;align-items:flex-end;gap:.35rem}
+.due{font-size:.72rem;font-weight:800;color:#fff;background:var(--bc);
+  padding:.12rem .5rem;border-radius:.9rem;white-space:nowrap;font-variant-numeric:tabular-nums}
+.due.none{background:var(--sunk);color:var(--mute)}
+.who{font-size:.78rem;color:var(--mute)}
+.acts{grid-column:2;display:flex;gap:.3rem;align-self:end;justify-self:end}
+.acts button{font-size:.76rem;padding:.25rem .6rem}
+.acts button.ok{background:var(--ink);color:var(--ground);border-color:var(--ink)}
+.mark{font-size:.74rem;font-weight:700;color:var(--green);white-space:nowrap}
+
+.empty{background:var(--surface);border:1px dashed var(--line);border-radius:.5rem;
+  padding:2.5rem 1rem;text-align:center;color:var(--mute);font-size:.9rem}
+.err{background:#fdeee9;border:1px solid #f4c4b5;color:#8c2f1c;
+  border-radius:.45rem;padding:.8rem 1rem;margin:1rem 0;font-size:.88rem}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]) .err{
+  background:#33201b;border-color:#6b3a2c;color:#ffb59e}}
+.foot{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--line);
+  font-size:.8rem;color:var(--faint)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>업무 레이더</h1>
+      <p class="sub" id="sub">불러오는 중…</p>
+    </div>
+    <div class="live off" id="live"><span class="dot"></span><span id="livet">연결 중</span></div>
+  </header>
+
+  <div id="err"></div>
+
+  <div class="tools">
+    <button id="btnAll" class="on">할 일만</button>
+    <button id="btnDone">처리한 것 보기</button>
+    <span class="spacer"></span>
+    <span class="sub" id="tot"></span>
+  </div>
+
+  <div id="body"></div>
+
+  <p class="foot">
+    이 화면은 <b>읽기 전용</b>입니다 — 텔레그램에서 자동으로 잡힌 것만 뜹니다.<br>
+    여기 없는 일은 끝난 일이 아니라 <b>텔레그램에 안 적힌 일</b>입니다.
+  </p>
+</div>
+
+<script type="module">
+/* ══════════════════════════════════════════════════════════════
+   자료 통로는 둘이다.
+     · 파이어베이스 — 폰에서도 보고, 여러 사람이 같이 본다 (Netlify 에 올릴 때)
+     · 이 프로그램  — 그 컴퓨터에서만. 계정도 인터넷도 필요 없다
+
+   설정 화면에서 파이어베이스를 넣으면 아래 값이 채워지고 그쪽으로 붙는다.
+   비어 있으면 프로그램에서 읽는다. 한 파일로 둘 다 된다.
+
+   완료·숨김은 목록과 따로 저장한다. 목록은 세 시간마다 통째로 새로 쓰이므로,
+   같이 두면 눌러놓은 완료가 되살아난다.
+   ══════════════════════════════════════════════════════════════ */
+/* 설정을 어디서 가져오나 — 셋 중 하나.
+   ① 주소 뒤 #… — 설치 마법사가 만들어 준 링크를 처음 한 번 누를 때
+   ② 이 브라우저에 저장된 것 — 그다음부터
+   ③ 파일에 박힌 것 — 각자 따로 올려서 쓸 때
+
+   ①의 # 뒤는 서버로 안 간다(브라우저 규칙). 그래서 화면을 올려둔 곳은
+   남의 설정을 알 수 없다. 한 주소를 여럿이 써도 서로 못 본다. */
+const BAKED = {
+  apiKey: "PASTE_API_KEY",
+  authDomain: "본인프로젝트.firebaseapp.com",
+  projectId: "본인프로젝트",
+  storageBucket: "본인프로젝트.firebasestorage.app",
+  messagingSenderId: "000000000000",
+  appId: "1:000000000000:web:0000000000000000000000"
+};
+const SAVEKEY = 'adele_board_cfg';
+
+function pickConfig(){
+  const h = location.hash.slice(1);
+  if(h){
+    try{
+      const c = JSON.parse(decodeURIComponent(escape(atob(h))));
+      if(c.apiKey && c.projectId){
+        localStorage.setItem(SAVEKEY, JSON.stringify(c));
+        history.replaceState(null, '', location.pathname + location.search);
+        return c;
+      }
+    }catch(e){ /* 이상한 값이면 무시하고 다음 길로 */ }
+  }
+  try{
+    const c = JSON.parse(localStorage.getItem(SAVEKEY) || 'null');
+    if(c && c.apiKey && c.projectId) return c;
+  }catch(e){ /* 저장된 게 깨졌으면 무시 */ }
+  return BAKED;
+}
+const firebaseConfig = pickConfig();
+const USE_FB = firebaseConfig.apiKey !== "PASTE_API_KEY";
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s??'').replace(/[&<>"]/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+const BUCKETS = [
+  {k:'마감임박', l:'🔴 마감 임박',                v:'var(--red)'},
+  {k:'미회신',   l:'⚠️ 지시했는데 답이 안 온 것', v:'var(--orange)'},
+  {k:'진행중',   l:'🟡 진행 중',                 v:'var(--yellow)'},
+  {k:'완료',     l:'✅ 마무리된 것',              v:'var(--green)'}
+];
+
+let AUTO = null, STATE = {}, SHOWDONE = false, fb = null;
+
+const key = it => (it.title||'').replace(/\s+/g,' ').trim();
+const isDone = it => !!STATE[key(it)];
+const HOW = {done:'✓ 완료', hidden:'숨김'};
+const ddayLabel = d => d==null ? null : (d>0 ? 'D-'+d : (d===0 ? '오늘' : (-d)+'일 지남'));
+const showErr = m => { $('#err').innerHTML = m ? `<div class="err">${esc(m)}</div>` : ''; };
+
+async function saveState(){
+  try{
+    if(USE_FB){
+      await fb.setDoc(fb.doc(fb.db,'workboard_meta','auto_state'), {done: STATE}, {merge:false});
+    }else{
+      await fetch('/api/state',{method:'POST',headers:{'Content-Type':'application/json'},
+                                body:JSON.stringify(STATE)});
+    }
+  }catch(e){ showErr('표시를 저장하지 못했습니다: ' + e.message); }
+}
+function mark(it, how){ STATE[key(it)] = {how, at:new Date().toISOString().slice(0,10)};
+                        saveState(); render(); }
+function unmark(it){ delete STATE[key(it)]; saveState(); render(); }
+
+function render(){
+  const body = $('#body');
+  if(!AUTO || !Array.isArray(AUTO.items)){
+    body.innerHTML = `<div class="empty">아직 올라온 것이 없습니다.<br>
+      업무 레이더를 한 번 돌리면 여기에 뜹니다.</div>`;
+    $('#sub').textContent=''; $('#tot').textContent=''; return;
+  }
+  const w = AUTO.as_of ? new Date(AUTO.as_of) : null;
+  $('#sub').textContent = (w ? `${w.getMonth()+1}/${w.getDate()} `
+      + `${String(w.getHours()).padStart(2,'0')}:${String(w.getMinutes()).padStart(2,'0')} 기준` : '')
+      + (AUTO.days ? ` · 최근 ${AUTO.days}일 텔레그램` : '');
+
+  const all = AUTO.items, live = all.filter(it => !isDone(it));
+  $('#tot').textContent = `전체 ${all.length}건 · 처리함 ${all.length-live.length}건`;
+
+  const list = SHOWDONE ? all.filter(isDone) : live;
+  if(!list.length){
+    body.innerHTML = `<div class="empty">${SHOWDONE?'처리한 것이 없습니다.':'남은 일이 없습니다. 👏'}</div>`;
+    return;
+  }
+  let html='';
+  for(const b of BUCKETS){
+    const rows = list.filter(it => (it.bucket||'진행중')===b.k);
+    if(!rows.length) continue;
+    html += `<section class="bucket"><h2 class="bhead">${b.l}
+      <span class="cnt">${rows.length}건</span></h2>${rows.map(it=>card(it,b.v)).join('')}</section>`;
+  }
+  body.innerHTML = html;
+  body.querySelectorAll('[data-act]').forEach(btn => btn.onclick = () => {
+    const it = AUTO.items[+btn.dataset.i];
+    btn.dataset.act==='undo' ? unmark(it) : mark(it, btn.dataset.act);
+  });
+}
+
+function card(it, color){
+  const i = AUTO.items.indexOf(it), dd = ddayLabel(it.dday),
+        done = isDone(it), st = STATE[key(it)]||{}, src = it.source||{};
+  return `<article class="item${done?' done':''}" style="--bc:${color}">
+    <p class="t">${done?'<s>':''}${esc(it.title)}${done?'</s>':''}</p>
+    ${it.waiting_on?`<p class="wait">└ ${esc(it.waiting_on)} 답 대기</p>`:''}
+    ${it.detail?`<p class="d">${esc(it.detail)}</p>`:''}
+    <p class="src">${[src.who,src.when,src.room].filter(Boolean).map(esc).join(' · ')}</p>
+    <div class="right">
+      <span class="due${dd?'':' none'}">${dd?esc(it.due||'')+' '+dd:'마감 없음'}</span>
+      ${it.owner?`<span class="who">${esc([].concat(it.owner).join(', '))}</span>`:''}
+    </div>
+    <div class="acts">${done
+      ? `<span class="mark">${HOW[st.how]||'처리함'}</span>
+         <button data-act="undo" data-i="${i}">되돌리기</button>`
+      : `<button class="ok" data-act="done" data-i="${i}">✓ 완료</button>
+         <button data-act="hidden" data-i="${i}">숨기기</button>`}</div>
+  </article>`;
+}
+
+$('#btnAll').onclick  = () => { SHOWDONE=false; $('#btnAll').classList.add('on');
+                                $('#btnDone').classList.remove('on'); render(); };
+$('#btnDone').onclick = () => { SHOWDONE=true;  $('#btnDone').classList.add('on');
+                                $('#btnAll').classList.remove('on'); render(); };
+
+async function initFirebase(){
+  const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
+  const m = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+  fb = {db: m.getFirestore(initializeApp(firebaseConfig)),
+        doc: m.doc, setDoc: m.setDoc};
+  m.onSnapshot(m.doc(fb.db,'workboard_auto','latest'), snap => {
+    AUTO = snap.exists() ? snap.data() : null;
+    $('#live').classList.remove('off'); $('#livet').textContent='실시간 연결됨';
+    showErr(''); render();
+  }, err => {
+    $('#live').classList.add('off'); $('#livet').textContent='끊김';
+    showErr('읽기 실패: ' + err.message);
+    render();
+  });
+  m.onSnapshot(m.doc(fb.db,'workboard_meta','auto_state'), snap => {
+    STATE = snap.exists() ? (snap.data().done || {}) : {};
+    render();
+  }, () => {});
+}
+
+async function loadLocal(){
+  try{
+    const d = await (await fetch('/api/board', {cache:'no-store'})).json();
+    AUTO = d.board || null; STATE = d.state || {};
+    $('#live').classList.remove('off'); $('#livet').textContent='내 컴퓨터에서 읽음';
+    showErr('');
+  }catch(e){
+    $('#live').classList.add('off'); $('#livet').textContent='못 읽음';
+    showErr('자료를 못 읽었습니다 — 업무 레이더를 켠 채로 열어 주십시오.');
+  }
+  render();
+}
+
+function forgetMe(){                                       // 남의 컴퓨터에서 열었을 때
+  localStorage.removeItem(SAVEKEY);
+  location.reload();
+}
+window.forgetMe = forgetMe;
+
+if(USE_FB){
+  initFirebase().catch(e => showErr('Firebase 연결 실패: ' + e.message));
+  $('#body').insertAdjacentHTML('afterend',
+    `<p class="foot">이 브라우저에만 내 설정이 저장돼 있습니다.
+      남의 컴퓨터라면 <a href="#" onclick="forgetMe();return false">지우기</a></p>`);
+}else if(location.protocol.startsWith('http') && location.hostname==='127.0.0.1'){
+  loadLocal(); setInterval(loadLocal, 20000);               // 내 컴퓨터에서 띄운 경우
+}else{
+  showErr('아직 연결되지 않았습니다 — 설치 화면에서 만들어 준 링크로 한 번 들어와 주십시오.');
+  render();
+}
+</script>
+</body>
+</html>
