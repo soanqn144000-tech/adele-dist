@@ -73,6 +73,17 @@ code{background:var(--sunk);padding:.1rem .35rem;border-radius:.25rem;font-size:
     <li>설치 화면이 브라우저로 열립니다. <b>맨 위 「클로드 코드」부터</b> 차례로 하시면 됩니다.</li>
   </ol>
 
+  <div class="tip" id="winwarn" hidden>
+    <b>「Windows에서 PC를 보호했습니다」 라는 파란 창이 뜨면</b> — 아델이 이상해서가
+    아니라, 널리 알려지지 않은 프로그램은 윈도우가 전부 이렇게 막습니다.<br>
+    <b>「실행 안 함」을 누르지 마십시오.</b> 「실행」 단추는 처음에 안 보입니다 —
+    <ol style="margin:.5rem 0 0;padding-left:1.2rem">
+      <li>창 안의 <b>「추가 정보」</b> 를 누릅니다</li>
+      <li>그러면 아래에 <b>「실행」</b> 단추가 나타납니다. 그것을 누릅니다</li>
+    </ol>
+    <span style="font-size:.9em">한 번만 하면 그다음부터는 그냥 열립니다.</span>
+  </div>
+
   <div class="tip" id="macwarn" hidden>
     <b>맥에서 「열지 않음」 경고가 뜨면</b> — 아델이 이상해서가 아니라, 애플에 등록되지
     않은 프로그램은 맥이 전부 이렇게 막습니다.<br>
@@ -114,6 +125,7 @@ code{background:var(--sunk);padding:.1rem .35rem;border-radius:.25rem;font-size:
     document.getElementById('macwarn').hidden = false;   // 맥에서만 뜨는 경고 안내
   } else {
     w.classList.add('me'); document.getElementById('tw').hidden = false;
+    document.getElementById('winwarn').hidden = false;   // 윈도우에서만 뜨는 경고 안내
   }
 })();
 </script>
