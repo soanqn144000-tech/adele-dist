@@ -71,6 +71,15 @@ code{background:var(--sunk);padding:.1rem .35rem;border-radius:.25rem;font-size:
     <li>설치 화면이 브라우저로 열립니다. <b>맨 위 「클로드 코드」부터</b> 차례로 하시면 됩니다.</li>
   </ol>
 
+  <div class="tip" id="macwarn" hidden>
+    <b>맥에서 「열지 않음」 경고가 뜨면</b> — 아델이 이상해서가 아니라, 인터넷에서 받은
+    프로그램에 맥이 붙이는 표시 때문입니다.<br>
+    <b>「완료」를 누르십시오. 「휴지통으로 이동」은 누르지 마십시오.</b><br>
+    그리고 <code>Adele</code> 말고 <b><code>아델 켜기.command</code></b> 를 누르십시오 —
+    그 표시를 스스로 떼고 켜도록 만들어 뒀습니다.<br>
+    그래도 막히면 <b>오른쪽 클릭 → 「열기」 → 다시 「열기」</b>. 한 번만 하면 됩니다.
+  </div>
+
   <div class="tip">
     <b>클로드 코드가 뭔지 모르셔도 됩니다.</b> 설치 화면에서 단추만 누르시면 아델이 알아서 깝니다.
     <b>클로드 구독(Pro 또는 Max)</b>만 있으면 됩니다 — 클로드 앱을 쓰고 계시면 그 계정 그대로입니다.
@@ -94,6 +103,7 @@ code{background:var(--sunk);padding:.1rem .35rem;border-radius:.25rem;font-size:
   if(mac){
     m.parentNode.insertBefore(m, w);
     m.classList.add('me'); document.getElementById('tm').hidden = false;
+    document.getElementById('macwarn').hidden = false;   // 맥에서만 뜨는 경고 안내
   } else {
     w.classList.add('me'); document.getElementById('tw').hidden = false;
   }
