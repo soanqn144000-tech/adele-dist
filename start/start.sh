@@ -15,8 +15,31 @@ RAW="${ADELE_START_RAW:-https://raw.githubusercontent.com/$REPO/main/start}"   #
 DIR="$HOME/Adele"
 USERDIR="$HOME/Library/Application Support/Adele"
 
-say()  { printf '\n  %s\n' "$*"; }
-fail() { say "⚠ $*"; say "이 창을 사진 찍어 아델을 알려 주신 분께 보내 주십시오."; read -r -p "  (엔터를 누르면 닫힙니다) " _ </dev/tty; exit 1; }
+# ── 화면 ─────────────────────────────────────────────────────────
+# 색은 아델 색(초록·금)만 쓴다. 흰 바탕·검은 바탕 어디서도 읽히는 값으로 골랐다.
+# 오른쪽 테두리는 안 그린다 — 한글은 폭이 글꼴마다 달라 상자가 어긋난다.
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  G=$'\033[38;5;35m'; Y=$'\033[38;5;136m'; D=$'\033[38;5;245m'; R=$'\033[38;5;167m'; B=$'\033[1m'; N=$'\033[0m'
+else
+  G=; Y=; D=; R=; B=; N=
+fi
+LINE="────────────────────────────────────────────"
+
+banner() {
+  [ -t 1 ] && clear
+  printf '\n\n   %s✦%s  %s아 델%s\n' "$Y" "$N" "$B$G" "$N"
+  printf '      %s텔레그램으로 말을 거는 내 비서%s\n' "$D" "$N"
+  printf '   %s%s%s\n\n' "$D" "$LINE" "$N"
+}
+doing() { printf '   %s◦%s %s\n' "$Y" "$N" "$*"; }                       # 지금 하는 일
+ok()    { printf '   %s✓%s %s  %s%s%s\n' "$G" "$N" "$1" "$D" "$2" "$N"; }  # 끝난 일 · 덧붙임
+say()   { printf '     %s·%s %s\n' "$D" "$N" "$*"; }
+head2() { printf '\n   %s%s%s\n   %s%s%s\n\n' "$D" "$LINE" "$N" "$B" "$*" "$N"; }
+fail() {
+  printf '\n   %s⚠ %s%s\n\n' "$R" "$*" "$N"
+  say "이 창을 사진 찍어 아델을 알려 주신 분께 보내 주십시오."
+  [ -z "${ADELE_START_PREPARE:-}" ] && { printf '\n'; read -r -p "     (엔터를 누르면 닫힙니다) " _ </dev/tty; }; exit 1
+}
 
 find_claude() {
   local c
@@ -28,16 +51,16 @@ find_claude() {
   return 1
 }
 
-clear
-say "아델을 준비합니다. 창을 닫지 마십시오."
+banner
+printf '   %s준비하는 동안 창을 닫지 마십시오.%s\n\n' "$D" "$N"
 
 # ── 1·2. 클로드 코드 ─────────────────────────────────────────────
 CLAUDE="$(find_claude)" || {
-  say "클로드 코드가 없어 깝니다. (1~3분)"
+  doing "클로드 코드를 깝니다 (1~3분)"
   curl -fsSL https://claude.ai/install.sh | bash || fail "클로드 코드 설치가 실패했습니다."
   CLAUDE="$(find_claude)" || fail "깔았는데 클로드 코드를 못 찾습니다."
 }
-say "클로드 코드 ✓  ($("$CLAUDE" --version 2>/dev/null | head -1))"
+ok "클로드 코드  " "$("$CLAUDE" --version 2>/dev/null | head -1)"
 
 # 다음부터 터미널에서 그냥 'claude' 만 쳐도 켜지게 — 동료분이 막힌 자리
 BIN="$(dirname "$CLAUDE")"
@@ -48,14 +71,16 @@ done
 
 # ── 설치가 이미 끝난 사람: 내 폴더에서 바로 켠다 ─────────────────
 if grep -qs '"telegram_bot_token"' "$USERDIR/config.json" && grep -qs '"tg_api_id"' "$USERDIR/config.json"; then
-  say "설치는 끝나 있습니다. 클로드 코드를 켭니다."
+  ok "아델        " "설치돼 있습니다"
+  [ -n "${ADELE_START_PREPARE:-}" ] && { echo "READY: $USERDIR"; exit 0; }   # 클로드가 부른 것 — 켜지 않는다
+  head2 "클로드 코드를 켭니다"
   [ -n "${ADELE_START_DRY:-}" ] && { echo "DRY: $USERDIR"; exit 0; }
   cd "$USERDIR" && exec "$CLAUDE" </dev/tty   # 파이프로 받아 돌려도 키보드를 쓰게
 fi
 
 # ── 3. 아델 본체 ─────────────────────────────────────────────────
 if [ ! -x "$DIR/프로그램/Adele" ]; then
-  say "아델 본체를 받습니다. (30MB 남짓)"
+  doing "아델 본체를 받습니다 (30MB 남짓)"
   URL="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/tags/latest" \
         | grep -o '"browser_download_url": *"[^"]*Adele-mac-[^"]*\.zip"' | head -1 | sed 's/.*"\(http[^"]*\)"/\1/')"
   [ -n "$URL" ] || fail "받을 주소를 못 찾았습니다 (인터넷 연결을 봐 주십시오)."
@@ -67,14 +92,35 @@ if [ ! -x "$DIR/프로그램/Adele" ]; then
   rm -rf "$TMP"
 fi
 xattr -dr com.apple.quarantine "$DIR" 2>/dev/null   # 받은 표시를 뗀다 — 뒤에서 켜도 안 막히게
-say "아델 본체 ✓  ($DIR)"
+ok "아델 본체    " "~${DIR#"$HOME"}"
 
 # ── 4. 설치 안내를 놓고 클로드를 켠다 ────────────────────────────
 curl -fsSL "$RAW/CLAUDE.md" -o "$DIR/CLAUDE.md.new" && mv "$DIR/CLAUDE.md.new" "$DIR/CLAUDE.md"
+curl -fsSL "$RAW/setup.py" -o "$DIR/setup.py.new" && mv "$DIR/setup.py.new" "$DIR/setup.py"   # 설치 도구는 늘 최신으로
 [ -s "$DIR/CLAUDE.md" ] || fail "설치 안내를 받지 못했습니다."
+ok "설치 안내    " "받았습니다"
 
-say "클로드 코드를 켭니다. 처음이면 로그인 창이 뜹니다 — 클로드 계정으로 들어가 주십시오."
-say "「이 폴더를 믿겠냐」고 물으면 엔터를 누르십시오."
+# 바탕화면에 「클로드 코드 열기」 — 다음부터 두 번 누르면 된다.
+# 여기서 curl 로 만든 파일은 '받은 표시'가 안 붙어 맥이 막지 않는다(2026-11-17)
+DESK="$HOME/Desktop/클로드 코드 열기.command"
+if [ ! -e "$DESK" ] && curl -fsSL "$RAW/%ED%81%B4%EB%A1%9C%EB%93%9C%20%EC%BD%94%EB%93%9C%20%EC%97%B4%EA%B8%B0.command" -o "$DESK.new"; then
+  mv "$DESK.new" "$DESK" && chmod +x "$DESK" && ok "바탕화면     " "「클로드 코드 열기」 를 놓았습니다"
+fi
+rm -f "$DESK.new"
+# 업무 레이더(자동감지) 화면도 바탕화면에서 바로 — 사명자는 이것만 본다(2026-11-17)
+RAD="$HOME/Desktop/업무 레이더 열기.command"
+if [ ! -e "$RAD" ] && curl -fsSL "$RAW/%EC%97%85%EB%AC%B4%20%EB%A0%88%EC%9D%B4%EB%8D%94%20%EC%97%B4%EA%B8%B0.command" -o "$RAD.new"; then
+  mv "$RAD.new" "$RAD" && chmod +x "$RAD" && ok "바탕화면     " "「업무 레이더 열기」 를 놓았습니다"
+fi
+rm -f "$RAD.new"
+
+# 이미 켜져 있는 클로드가 부른 것이면 여기서 끝 — 그 클로드가 이어서 한다(2026-11-17)
+[ -n "${ADELE_START_PREPARE:-}" ] && { echo "READY: $DIR"; exit 0; }
+
+head2 "이제 클로드 코드를 켭니다"
+say "처음이면 로그인 창이 뜹니다 — 클로드 계정으로 들어가 주십시오"
+say "「이 폴더를 믿겠냐」고 물으면 엔터를 누르십시오"
+printf '\n'
 [ -n "${ADELE_START_DRY:-}" ] && { echo "DRY: $DIR"; exit 0; }
 sleep 2
 cd "$DIR" && exec "$CLAUDE" "아델 깔아줘" </dev/tty   # 파이프로 받아 돌려도 키보드를 쓰게

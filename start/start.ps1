@@ -14,10 +14,27 @@ $Raw     = "https://raw.githubusercontent.com/$Repo/main/start"
 $Dir     = Join-Path $env:USERPROFILE 'Adele'
 $UserDir = Join-Path $env:LOCALAPPDATA 'Adele'
 
-function Say($m)  { Write-Host ''; Write-Host "  $m" }
+# ── 화면 ─────────────────────────────────────────────────────────
+# start.sh 와 같은 모양. 기호는 윈도우 한글 글꼴에 다 들어 있는 것(◆ ● ○ ─ ·)만 쓴다.
+# 오른쪽 테두리는 안 그린다 — 한글은 폭이 글꼴마다 달라 상자가 어긋난다.
+$Line = '─' * 44
+function Banner {
+  Clear-Host; Write-Host ''; Write-Host ''
+  Write-Host '   ◆  ' -ForegroundColor DarkYellow -NoNewline; Write-Host '아 델' -ForegroundColor Green
+  Write-Host '      텔레그램으로 말을 거는 내 비서' -ForegroundColor DarkGray
+  Write-Host "   $Line" -ForegroundColor DarkGray; Write-Host ''
+}
+function Doing($m) { Write-Host '   ○ ' -ForegroundColor DarkYellow -NoNewline; Write-Host $m }
+function Ok($m, $note) {
+  Write-Host '   ● ' -ForegroundColor Green -NoNewline; Write-Host "$m  " -NoNewline
+  Write-Host $note -ForegroundColor DarkGray
+}
+function Say($m)   { Write-Host '     · ' -ForegroundColor DarkGray -NoNewline; Write-Host $m }
+function Head2($m) { Write-Host ''; Write-Host "   $Line" -ForegroundColor DarkGray; Write-Host "   $m" -ForegroundColor White; Write-Host '' }
 function Fail($m) {
-  Say "⚠ $m"; Say '이 창을 사진 찍어 아델을 알려 주신 분께 보내 주십시오.'
-  Read-Host '  (엔터를 누르면 닫힙니다)' | Out-Null; exit 1
+  Write-Host ''; Write-Host "   ! $m" -ForegroundColor Red; Write-Host ''
+  Say '이 창을 사진 찍어 아델을 알려 주신 분께 보내 주십시오.'
+  if (-not $env:ADELE_START_PREPARE) { Write-Host ''; Read-Host '     (엔터를 누르면 닫힙니다)' | Out-Null }; exit 1
 }
 
 function Find-Claude {
@@ -31,13 +48,13 @@ function Find-Claude {
   return $null
 }
 
-Clear-Host
-Say '아델을 준비합니다. 창을 닫지 마십시오.'
+Banner
+Write-Host '   준비하는 동안 창을 닫지 마십시오.' -ForegroundColor DarkGray; Write-Host ''
 
 # ── 1·2. 클로드 코드 ─────────────────────────────────────────────
 $Claude = Find-Claude
 if (-not $Claude) {
-  Say '클로드 코드가 없어 깝니다. (1~3분)'
+  Doing '클로드 코드를 깝니다 (1~3분)'
   try {
     $b = (New-Object Net.WebClient).DownloadData('https://claude.ai/install.ps1')
     Invoke-Expression ([Text.Encoding]::UTF8.GetString($b))
@@ -46,7 +63,7 @@ if (-not $Claude) {
   if (-not $Claude) { Fail '깔았는데 클로드 코드를 못 찾습니다.' }
 }
 try { $ver = (& $Claude --version 2>$null | Select-Object -First 1) } catch { $ver = '' }
-Say "클로드 코드 ✓  ($ver)"
+Ok '클로드 코드  ' $ver
 
 # 다음부터 터미널에서 그냥 'claude' 만 쳐도 켜지게 — 동료분이 막힌 자리
 $Bin = Split-Path $Claude
@@ -60,14 +77,16 @@ if (-not (($env:Path -split ';') -contains $Bin)) { $env:Path = "$Bin;$env:Path"
 $cfg = Join-Path $UserDir 'config.json'
 if ((Test-Path $cfg) -and (Select-String -Path $cfg -Pattern '"telegram_bot_token"' -Quiet) `
     -and (Select-String -Path $cfg -Pattern '"tg_api_id"' -Quiet)) {
-  Say '설치는 끝나 있습니다. 클로드 코드를 켭니다.'
+  Ok '아델        ' '설치돼 있습니다'
+  if ($env:ADELE_START_PREPARE) { Write-Host "READY: $UserDir"; exit 0 }   # 클로드가 부른 것 — 켜지 않는다
+  Head2 '클로드 코드를 켭니다'
   Set-Location $UserDir; & $Claude; exit
 }
 
 # ── 3. 아델 본체 ─────────────────────────────────────────────────
 function Find-Exe { Get-ChildItem $Dir -Recurse -Filter 'Adele.exe' -ErrorAction SilentlyContinue | Select-Object -First 1 }
 if (-not (Find-Exe)) {
-  Say '아델 본체를 받습니다. (60MB 남짓 — 몇 분 걸릴 수 있습니다)'
+  Doing '아델 본체를 받습니다 (60MB 남짓 — 몇 분 걸릴 수 있습니다)'
   try {
     $rel = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/tags/latest" -UseBasicParsing
     $url = ($rel.assets | Where-Object { $_.name -like 'Adele-win-*.zip' } | Select-Object -First 1).browser_download_url
@@ -87,16 +106,40 @@ if (-not (Find-Exe)) {
   if (-not (Find-Exe)) { Fail '풀었는데 Adele.exe 가 안 보입니다.' }
 }
 Get-ChildItem $Dir -Recurse -File -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue
-Say "아델 본체 ✓  ($Dir)"
+Ok '아델 본체    ' $Dir
 
 # ── 4. 설치 안내를 놓고 클로드를 켠다 ────────────────────────────
 try {
   $md = (New-Object Net.WebClient).DownloadData("$Raw/CLAUDE.md")
   [IO.File]::WriteAllBytes((Join-Path $Dir 'CLAUDE.md'), $md)
+  try { [IO.File]::WriteAllBytes((Join-Path $Dir 'setup.py'), (New-Object Net.WebClient).DownloadData("$Raw/setup.py")) } catch { }   # 설치 도구는 늘 최신으로
 } catch { if (-not (Test-Path (Join-Path $Dir 'CLAUDE.md'))) { Fail '설치 안내를 받지 못했습니다.' } }
 
-Say '클로드 코드를 켭니다. 처음이면 로그인 창이 뜹니다 — 클로드 계정으로 들어가 주십시오.'
-Say '「이 폴더를 믿겠냐」고 물으면 엔터를 누르십시오.'
+Ok '설치 안내    ' '받았습니다'
+
+# 바탕화면에 「클로드 코드 열기」 — 다음부터 두 번 누르면 된다.
+# 여기서 받은 파일은 '받은 표시'가 안 붙어 윈도우가 막지 않는다(2026-11-17)
+try {
+  $Desk = Join-Path ([Environment]::GetFolderPath('Desktop')) '클로드 코드 열기.bat'
+  if (-not (Test-Path $Desk)) {
+    $bat = (New-Object Net.WebClient).DownloadData("$Raw/Adele-Start.bat")
+    [IO.File]::WriteAllBytes($Desk, $bat)
+    Ok '바탕화면     ' '「클로드 코드 열기」 를 놓았습니다'
+  }
+  $Rad = Join-Path ([Environment]::GetFolderPath('Desktop')) '업무 레이더 열기.bat'
+  if (-not (Test-Path $Rad)) {
+    [IO.File]::WriteAllBytes($Rad, (New-Object Net.WebClient).DownloadData("$Raw/Adele-Radar.bat"))
+    Ok '바탕화면     ' '「업무 레이더 열기」 를 놓았습니다'
+  }
+} catch { }
+
+# 이미 켜져 있는 클로드가 부른 것이면 여기서 끝 — 그 클로드가 이어서 한다(2026-11-17)
+if ($env:ADELE_START_PREPARE) { Write-Host "READY: $Dir"; exit 0 }
+
+Head2 '이제 클로드 코드를 켭니다'
+Say '처음이면 로그인 창이 뜹니다 — 클로드 계정으로 들어가 주십시오'
+Say '「이 폴더를 믿겠냐」고 물으면 엔터를 누르십시오'
+Write-Host ''
 Start-Sleep 2
 Set-Location $Dir
 & $Claude '아델 깔아줘'
