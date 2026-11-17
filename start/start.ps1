@@ -94,7 +94,9 @@ if (-not (Find-Exe)) {
   if (-not $url) { Fail '받을 주소를 못 찾았습니다 (인터넷 연결을 봐 주십시오).' }
   $zip = Join-Path $env:TEMP 'adele-start.zip'
   $ProgressPreference = 'SilentlyContinue'            # 진행 막대를 그리면 몇 배 느려진다
-  try { Invoke-WebRequest $url -OutFile $zip -UseBasicParsing } catch { Fail '아델을 받지 못했습니다.' }
+  $got = $false   # 11/18 깃허브가 한 번 멎었다 — 세 번까지 다시 받는다
+  foreach ($t in 1..3) { try { Invoke-WebRequest $url -OutFile $zip -UseBasicParsing; $got = $true; break } catch { Start-Sleep 3 } }
+  if (-not $got) { Fail '아델을 받지 못했습니다 (인터넷이 잠깐 끊겼을 수 있습니다 — 한 번 더 붙여넣어 보십시오).' }
   try { Expand-Archive -Path $zip -DestinationPath $Dir -Force } catch { Fail '압축을 풀지 못했습니다.' }
   Remove-Item $zip -ErrorAction SilentlyContinue
   # 압축 안에 Adele 폴더가 한 겹 더 있으면 끌어올린다 — 아델이 제 자리를 찾게

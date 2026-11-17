@@ -85,7 +85,8 @@ if [ ! -x "$DIR/프로그램/Adele" ]; then
         | grep -o '"browser_download_url": *"[^"]*Adele-mac-[^"]*\.zip"' | head -1 | sed 's/.*"\(http[^"]*\)"/\1/')"
   [ -n "$URL" ] || fail "받을 주소를 못 찾았습니다 (인터넷 연결을 봐 주십시오)."
   TMP="$(mktemp -d)"
-  curl -fL --progress-bar "$URL" -o "$TMP/a.zip" || fail "아델을 받지 못했습니다."
+  curl -fL --retry 3 --retry-delay 3 --retry-all-errors --connect-timeout 30 --progress-bar "$URL" -o "$TMP/a.zip" \
+    || fail "아델을 받지 못했습니다 (인터넷이 잠깐 끊겼을 수 있습니다 — 한 번 더 붙여넣어 보십시오)."   # 11/18 깃허브가 한 번 멎었다
   ditto -x -k "$TMP/a.zip" "$TMP/x" || fail "압축을 풀지 못했습니다."
   SRC="$TMP/x/Adele"; [ -d "$SRC" ] || SRC="$TMP/x"
   mkdir -p "$DIR" && ditto "$SRC" "$DIR" || fail "아델 폴더를 만들지 못했습니다."
