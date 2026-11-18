@@ -591,9 +591,21 @@ def 열쇠(phone: str = "") -> int:
 
 
 def _read_app(html: str) -> tuple[str, str]:
-    i = _re.search(r'app_id.{0,400}?<strong>(\d+)</strong>', html, _re.S)
-    h = _re.search(r'app_hash.{0,400}?>\s*([0-9a-f]{32})\s*<', html, _re.S)
-    return (i.group(1) if i else "", h.group(1) if h else "")
+    """앱이 있으면 화면에서 api_id(숫자)·api_hash(32자) 를 읽는다.
+    11/18 실제 화면: 새 모양은 data-copy="숫자" · id="api_hash_value" data-value="32자".
+    옛 모양(uneditable-input 칸)도 같이 본다. 한 계정에 앱은 하나뿐이라 있으면 만들지 않는다."""
+    vals = [_re.sub(r"<[^>]+>", "", v).strip() for v in
+            _re.findall(r'<span[^>]*uneditable-input[^>]*>(.*?)</span>', html, _re.S)]
+    vals += [v.strip() for v in _re.findall(r'data-(?:copy|value)=["\']([^"\']+)["\']', html)]
+    vals += [_re.sub(r"<[^>]+>", "", v).strip() for v in
+             _re.findall(r'<span[^>]*class=["\']vv["\'][^>]*>(.*?)</span>', html, _re.S)]
+    aid = next((v for v in vals if v.isdigit() and 4 <= len(v) <= 12), "")
+    ah = next((v for v in vals if _re.fullmatch(r"[0-9a-f]{32}", v)), "")
+    return aid, ah
+
+
+def _has_app(html: str) -> bool:
+    return any(k in html for k in ("uneditable-input", "api_hash_value", "App api_id", "app_edit_form"))
 
 
 def 열쇠코드(code: str = "") -> int:
@@ -620,7 +632,16 @@ def 열쇠코드(code: str = "") -> int:
             "User-Agent": _UA["User-Agent"], "Referer": _MYTG + "/"}), timeout=30) \
             .read().decode("utf-8", "replace")
         html = get()
+        if os.environ.get("ADELE_MYTG_DUMP"):                 # 시험용 — 숫자·열쇠는 가리고 화면 모양만 남긴다
+            Path(os.environ["ADELE_MYTG_DUMP"]).write_text(
+                _re.sub(r"[0-9a-f]{32}", "<HASH32>", _re.sub(r"\d{5,}", "<NUM>", html)), encoding="utf-8")
         aid, ah = _read_app(html)
+        if os.environ.get("ADELE_MYTG_DUMP") and not (aid and ah):
+            print("(시험) 화면만 남기고 멈춥니다."); return 1
+        if not (aid and ah) and _has_app(html):   # 앱은 있는데 못 읽었다 — 또 만들지 않는다
+            print("앱은 있는데 열쇠 칸을 못 읽었습니다.")
+            print("  [클로드에게] 사람에게 my.telegram.org → API development tools 화면의 api_id·api_hash 를 불러 달라고 하십시오.")
+            return 1
         if not (aid and ah):                                  # 아직 앱이 없다 — 하나 만든다
             tag = _re.search(r'<input[^>]*name=["\']?hash\b[^>]*>', html)
             m = tag and _re.search(r'value=["\']?([^"\'\s>]+)', tag.group(0))
