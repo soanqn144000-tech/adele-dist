@@ -38,6 +38,7 @@
     python3 setup.py 24시간켜기
     python3 setup.py 점검
     python3 setup.py 주인다시            ← 주인을 되찾을 때(비상구)
+    python3 setup.py 터미널 [부를이름]    ← Ghostty 를 열면 비서가 켜지고 상태줄이 뜬다
 
 못 하는 것은 못 한다고 말한다. 조용히 실패하지 않는다.
 """
@@ -720,10 +721,98 @@ def 일정(kind: str = "", uid: str = "", pw: str = "", *name: str) -> int:
     return 0
 
 
+# ── 터미널을 부장님 것처럼 (2026-11-18) ────────────────────────────────
+# Ghostty 를 열면 비서(클로드)가 아델 폴더에서 저절로 켜지고, 맨 아래에 상태줄이 뜬다.
+_TERM_RAW = "https://raw.githubusercontent.com/soanqn144000-tech/adele-dist/main/start/term/"
+
+
+def _ghostty_set(path: Path, kv: list) -> None:
+    """Ghostty 설정에서 우리가 쓰는 줄만 갈아 끼운다. 사람이 쓴 다른 줄은 그대로."""
+    keys = {k for k, _ in kv}
+    old = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    if old and not path.with_suffix(".아델전").exists():
+        path.with_suffix(".아델전").write_text("\n".join(old) + "\n", encoding="utf-8")
+    keep = [ln for ln in old if ln.split("=", 1)[0].strip() not in keys and "# 아델:" not in ln]
+    keep += ["# 아델: Ghostty 를 열면 비서가 켜진다 (setup.py 터미널)"]
+    keep += [f"{k} = {v}" for k, v in kv]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(keep) + "\n", encoding="utf-8")
+
+
+def 터미널(name: str = "") -> int:
+    """Ghostty 를 열면 비서가 켜지게 하고, 클로드 코드 맨 아래에 상태줄을 단다.
+    name 을 주면 상태줄·안내에 그 이름(영문이면 대문자)을 쓴다."""
+    home = _home()
+    if name:
+        f = home / "config.json"
+        try:
+            c = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+            c["display_name"] = name.strip()
+            f.write_text(json.dumps(c, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(f"부를 이름 : {name.strip()}")
+            g = home / "CLAUDE.md"                           # 클로드가 스스로를 이 이름으로 부르게
+            if g.exists():
+                t = g.read_text(encoding="utf-8").split("\n## 당신의 이름")[0].rstrip("\n")
+                g.write_text(t + f"\n\n## 당신의 이름\n\n이 사람은 비서를 **{name.strip()}** 이라고 "
+                             f"부릅니다. 스스로를 {name.strip()} 이라고 하십시오. "
+                             f"'아델' 은 프로그램 이름일 뿐입니다.\n", encoding="utf-8")
+        except (OSError, ValueError) as e:
+            print(f"이름을 못 적었습니다 — {e}")
+    # 1) 상태줄 파일
+    d = Path.home() / ".adele_term"
+    d.mkdir(exist_ok=True)
+    for fn in ("statusline.py", "set_state.py"):
+        try:
+            src = os.environ.get("ADELE_TERM_SRC")            # 시험용 — 올리기 전 내 폴더에서
+            if src:
+                (d / fn).write_bytes((Path(src) / fn).read_bytes())
+                continue
+            with urllib.request.urlopen(_TERM_RAW + fn, timeout=30) as r:
+                (d / fn).write_bytes(r.read())
+        except Exception as e:                               # noqa: BLE001
+            print(f"상태줄 파일을 못 받았습니다 ({fn}) — {type(e).__name__}")
+            return 1
+    py = sys.executable or "python3"
+    # 2) 클로드 코드 설정 — 상태줄과 훅. 다른 설정은 건드리지 않는다
+    sp = Path.home() / ".claude" / "settings.json"
+    try:
+        cs = json.loads(sp.read_text(encoding="utf-8")) if sp.exists() else {}
+    except ValueError:
+        print("클로드 설정 파일이 깨져 있어 손대지 않았습니다(~/.claude/settings.json).")
+        return 1
+    if sp.exists() and not sp.with_suffix(".json.아델전").exists():
+        sp.with_suffix(".json.아델전").write_text(sp.read_text(encoding="utf-8"), encoding="utf-8")
+    cs["statusLine"] = {"type": "command", "command": f'"{py}" "{d / "statusline.py"}"',
+                        "refreshInterval": 1}
+    hooks = cs.setdefault("hooks", {})
+    for ev, st in (("UserPromptSubmit", "working"), ("PreToolUse", "working"),
+                   ("Stop", "done"), ("Notification", "review")):
+        cmd = f'"{py}" "{d / "set_state.py"}" {st}'
+        lst = [h for h in hooks.get(ev, []) if ".adele_term" not in json.dumps(h)]
+        lst.append({"hooks": [{"type": "command", "command": cmd}]})
+        hooks[ev] = lst
+    sp.parent.mkdir(exist_ok=True)
+    sp.write_text(json.dumps(cs, ensure_ascii=False, indent=2), encoding="utf-8")
+    print("상태줄     : 달았습니다 (클로드 코드를 다시 켜면 보입니다)")
+    # 3) Ghostty — 맥만
+    if sys.platform == "darwin":
+        if not (Path("/Applications/Ghostty.app").exists()
+                or (Path.home() / "Applications/Ghostty.app").exists()):
+            print("Ghostty    : 이 맥에 없습니다 — 깔면 다시 「터미널」 을 돌리십시오.")
+        else:
+            gh = Path.home() / ".config" / "ghostty" / "config"
+            _ghostty_set(gh, [("working-directory", f'"{home}"'),
+                              ("window-inherit-working-directory", "false"),
+                              ("command", '/bin/zsh -lic "claude; exec zsh -l"')])
+            print("Ghostty    : 열면 비서가 바로 켜집니다 (지금 열린 창은 닫았다 다시 여십시오)")
+    return 0
+
+
 CMDS = {"상태": 상태, "이름": 이름, "텔레그램": 텔레그램, "인증번호": 인증번호,
         "봇만들기": 봇만들기, "암호": 암호, "방목록": 방목록, "방고르기": 방고르기,
         "파이어베이스": 파이어베이스, "24시간켜기": 시간켜기, "점검": 점검,
-        "주인다시": 주인다시, "열쇠": 열쇠, "열쇠코드": 열쇠코드, "일정": 일정}
+        "주인다시": 주인다시, "열쇠": 열쇠, "열쇠코드": 열쇠코드, "일정": 일정,
+        "터미널": 터미널, "terminal": 터미널}
 
 
 def main(argv: list[str]) -> int:
