@@ -41,6 +41,14 @@ fail() {
   [ -z "${ADELE_START_PREPARE:-}" ] && { printf '\n'; read -r -p "     (엔터를 누르면 닫힙니다) " _ </dev/tty; }; exit 1
 }
 
+# 11/18 동료 맥(Ghostty)에서 클로드가 "EINVAL kqueue" 로 바로 죽었다 — 맥은 /dev/tty 를 kqueue 로 못 지켜본다.
+# 진짜 단말 이름(/dev/ttys000 같은)을 찾아 그걸로 키보드를 붙인다.
+real_tty() {
+  local t; t="$(tty 0<&1 2>/dev/null)"
+  case "$t" in /dev/tty?*) ;; *) t="/dev/$(ps -o tty= -p $$ 2>/dev/null | tr -d ' ')";; esac
+  { [ -c "$t" ] && [ "$t" != /dev/ ]; } && echo "$t" || echo /dev/tty
+}
+
 find_claude() {
   local c
   for c in "$(command -v claude 2>/dev/null)" "$HOME/.local/bin/claude" "$HOME/.claude/local/claude" \
@@ -75,7 +83,7 @@ if grep -qs '"telegram_bot_token"' "$USERDIR/config.json" && grep -qs '"tg_api_i
   [ -n "${ADELE_START_PREPARE:-}" ] && { echo "READY: $USERDIR"; exit 0; }   # 클로드가 부른 것 — 켜지 않는다
   head2 "클로드 코드를 켭니다"
   [ -n "${ADELE_START_DRY:-}" ] && { echo "DRY: $USERDIR"; exit 0; }
-  cd "$USERDIR" && exec "$CLAUDE" </dev/tty   # 파이프로 받아 돌려도 키보드를 쓰게
+  cd "$USERDIR" && exec "$CLAUDE" <"$(real_tty)"   # 파이프로 받아 돌려도 키보드를 쓰게
 fi
 
 # ── 3. 아델 본체 ─────────────────────────────────────────────────
@@ -124,4 +132,4 @@ say "「이 폴더를 믿겠냐」고 물으면 엔터를 누르십시오"
 printf '\n'
 [ -n "${ADELE_START_DRY:-}" ] && { echo "DRY: $DIR"; exit 0; }
 sleep 2
-cd "$DIR" && exec "$CLAUDE" "아델 깔아줘" </dev/tty   # 파이프로 받아 돌려도 키보드를 쓰게
+cd "$DIR" && exec "$CLAUDE" "아델 깔아줘" <"$(real_tty)"   # 파이프로 받아 돌려도 키보드를 쓰게
