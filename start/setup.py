@@ -25,6 +25,7 @@
 
     python3 setup.py 상태
     python3 setup.py 이름 다니엘
+    python3 setup.py 부서 내무부          ← 업무 레이더가 우리 부서 일을 골라낼 낱말을 정한다
     python3 setup.py 열쇠 010-1234-5678      ← my.telegram.org 확인 코드를 보낸다
     python3 setup.py 열쇠코드 <코드>          ← 열쇠를 대신 받고 곧바로 로그인 번호를 보낸다
     python3 setup.py 텔레그램 <api_id> <api_hash> <전화번호>   ← (열쇠를 손으로 받았을 때)
@@ -226,6 +227,7 @@ def 상태() -> int:
         ("주인(chat id)", bool(c.get("admin_telegram_id")),
          "24시간 켜두면 로그인한 본인 계정으로 저절로 정해집니다"),
         ("교회 지식", not locked, "잠겨 있으면 암호가 필요합니다"),
+        ("소속 부서", bool(c.get("my_dept")), c.get("my_dept") or "업무 레이더가 우리 부서 일을 골라내는 데 씁니다"),
         ("훑을 방", n > 0, f"{n}개"),
         ("일정(선택)", bool(c.get("cal_kind") or c.get("icloud_id")), "아이폰·갤럭시 달력 — 없어도 됩니다"),
         ("업무 레이더 화면", bool(c.get("fb_project")), "없어도 나머지는 다 됩니다"),
@@ -392,6 +394,25 @@ def 방목록() -> int:
     print("고르실 때 : python3 setup.py 방고르기 core=1,3 mixed=5")
     print("  core  = 우리 부서 전용 방 (통째로 읽습니다)")
     print("  mixed = 다른 부서가 섞인 방 (내 것과 우리 일만 골라 읽습니다)")
+    return 0
+
+
+def 부서(*words: str) -> int:
+    """소속 부서를 적는다 — 업무 레이더가 섞인 방에서 우리 부서 일을 골라내는 낱말이 이걸로 정해진다.
+
+    「내무부」면 부장님 뇌와 똑같은 내무부 낱말(출결·결석·사고처리·입교…)을 쓴다.
+    """
+    name = " ".join(words).strip()
+    if not name:
+        print("부서를 같이 적어 주십시오 — 보기 : 부서 내무부")
+        return 1
+    r = call("/api/save", {"my_dept": name}, timeout=300)
+    if not r.get("ok"):
+        print(f"저장 실패 — {r.get('error')}")
+        return 1
+    print(f"「{name}」 (으)로 적었습니다.")
+    if "내무" in name:
+        print("  업무 레이더가 내무부 낱말(출결·결석·사고처리·입교 등)로 섞인 방을 골라 읽습니다.")
     return 0
 
 
@@ -808,7 +829,7 @@ def 터미널(name: str = "") -> int:
     return 0
 
 
-CMDS = {"상태": 상태, "이름": 이름, "텔레그램": 텔레그램, "인증번호": 인증번호,
+CMDS = {"상태": 상태, "이름": 이름, "부서": 부서, "텔레그램": 텔레그램, "인증번호": 인증번호,
         "봇만들기": 봇만들기, "암호": 암호, "방목록": 방목록, "방고르기": 방고르기,
         "파이어베이스": 파이어베이스, "24시간켜기": 시간켜기, "점검": 점검,
         "주인다시": 주인다시, "열쇠": 열쇠, "열쇠코드": 열쇠코드, "일정": 일정,
