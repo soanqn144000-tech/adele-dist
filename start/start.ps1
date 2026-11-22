@@ -75,8 +75,13 @@ if (-not (($env:Path -split ';') -contains $Bin)) { $env:Path = "$Bin;$env:Path"
 
 # ── 설치가 이미 끝난 사람: 내 폴더에서 바로 켠다 ─────────────────
 $cfg = Join-Path $UserDir 'config.json'
-if ((Test-Path $cfg) -and (Select-String -Path $cfg -Pattern '"telegram_bot_token"' -Quiet) `
-    -and (Select-String -Path $cfg -Pattern '"tg_api_id"' -Quiet)) {
+# 칸 이름만 보면 안 된다 — 깔다 만 사람은 칸은 있고 값이 비었다(2026-11-22 방태준 컴에서 멈춤)
+$done = $false
+if (Test-Path $cfg) {
+  try { $c = Get-Content $cfg -Raw -Encoding UTF8 | ConvertFrom-Json
+        $done = [bool]("$($c.telegram_bot_token)".Trim()) -and [bool]("$($c.tg_api_id)".Trim()) } catch { $done = $false }
+}
+if ($done) {
   Ok '아델        ' '설치돼 있습니다'
   if ($env:ADELE_START_PREPARE) { Write-Host "READY: $UserDir"; exit 0 }   # 클로드가 부른 것 — 켜지 않는다
   Head2 '클로드 코드를 켭니다'

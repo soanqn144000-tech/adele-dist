@@ -128,6 +128,11 @@ def helper():
 
 
 def main():
+    for st in (sys.stdin, sys.stdout):                       # 윈도우는 기본이 cp949 — 한글·구체 글자가 깨진다(2026-11-22)
+        try:
+            st.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
     try:
         data = json.loads(sys.stdin.read() or "{}")
     except Exception:

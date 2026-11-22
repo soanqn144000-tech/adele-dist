@@ -760,8 +760,71 @@ def _ghostty_set(path: Path, kv: list) -> None:
     path.write_text("\n".join(keep) + "\n", encoding="utf-8")
 
 
+def _strip_jsonc(t: str) -> str:
+    """윈도우 터미널 설정은 // 주석·끝 쉼표가 섞인 JSON 이다 — 문자열은 건드리지 않고 걷어낸다."""
+    out, i, n, q = [], 0, len(t), False
+    while i < n:
+        ch = t[i]
+        if q:
+            out.append(ch)
+            if ch == "\\" and i + 1 < n:
+                out.append(t[i + 1]); i += 2; continue
+            if ch == '"':
+                q = False
+        elif ch == '"':
+            q = True; out.append(ch)
+        elif t.startswith("//", i):
+            while i < n and t[i] != "\n":
+                i += 1
+            continue
+        elif t.startswith("/*", i):
+            j = t.find("*/", i + 2); i = n if j < 0 else j + 2; continue
+        else:
+            out.append(ch)
+        i += 1
+    import re
+    return re.sub(r",(\s*[}\]])", r"\1", "".join(out))
+
+
+def _wt_autostart(home: Path) -> bool:
+    """(윈도우) 터미널에서 파워셸을 열면 아델 폴더에서 클로드 코드가 바로 켜지게.
+    프로필 스크립트는 실행 정책에 막히는 PC 가 많아 윈도우 터미널 설정을 고친다(2026-11-22)."""
+    la = os.environ.get("LOCALAPPDATA", "")
+    cands = [Path(la) / "Packages" / "Microsoft.WindowsTerminal_8wekyb3d8bbwe" / "LocalState" / "settings.json",
+             Path(la) / "Packages" / "Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe" / "LocalState" / "settings.json",
+             Path(la) / "Microsoft" / "Windows Terminal" / "settings.json"]
+    cmd = f'powershell.exe -NoLogo -NoExit -Command "Set-Location -LiteralPath \'{home}\'; claude"'
+    done = False
+    for f in cands:
+        if not f.exists():
+            continue
+        try:
+            raw = f.read_text(encoding="utf-8-sig")
+            cfg = json.loads(_strip_jsonc(raw))
+        except (OSError, ValueError) as e:
+            print(f"터미널 설정을 못 읽었습니다 ({f.name}) — {type(e).__name__}")
+            continue
+        profs = cfg.get("profiles")
+        lst = profs.get("list", []) if isinstance(profs, dict) else (profs or [])
+        hit = [p for p in lst if isinstance(p, dict) and (
+            "{61c54bbd-c2c6-5271-96e7-009a87ff44bf}" == str(p.get("guid", "")).lower()
+            or str(p.get("commandline", "")).lower().startswith(("powershell", "%systemroot%\\system32\\windowspowershell"))
+            or str(p.get("name", "")) == "Windows PowerShell")]
+        if not hit:
+            continue
+        bak = f.with_suffix(".json.아델전")
+        if not bak.exists():
+            bak.write_text(raw, encoding="utf-8")
+        for p in hit:
+            p["commandline"] = cmd
+            p["startingDirectory"] = str(home)
+        f.write_text(json.dumps(cfg, ensure_ascii=False, indent=4), encoding="utf-8")
+        done = True
+    return done
+
+
 def 터미널(name: str = "") -> int:
-    """Ghostty 를 열면 비서가 켜지게 하고, 클로드 코드 맨 아래에 상태줄을 단다.
+    """Ghostty(맥)·파워셸(윈도우)을 열면 비서가 켜지게 하고, 클로드 코드 맨 아래에 상태줄을 단다.
     name 을 주면 상태줄·안내에 그 이름(영문이면 대문자)을 쓴다."""
     home = _home()
     if name:
@@ -815,7 +878,13 @@ def 터미널(name: str = "") -> int:
     sp.parent.mkdir(exist_ok=True)
     sp.write_text(json.dumps(cs, ensure_ascii=False, indent=2), encoding="utf-8")
     print("상태줄     : 달았습니다 (클로드 코드를 다시 켜면 보입니다)")
-    # 3) Ghostty — 맥만
+    # 3) 윈도우 — 터미널에서 파워셸을 열면 클로드가 바로 켜지게
+    if os.name == "nt":
+        if _wt_autostart(home):
+            print("파워셸     : 열면 비서가 바로 켜집니다 (지금 열린 창은 닫았다 다시 여십시오)")
+        else:
+            print("파워셸     : 윈도우 터미널 설정을 못 찾아 자동 켜기는 못 달았습니다.")
+    # 4) Ghostty — 맥만
     if sys.platform == "darwin":
         if not (Path("/Applications/Ghostty.app").exists()
                 or (Path.home() / "Applications/Ghostty.app").exists()):

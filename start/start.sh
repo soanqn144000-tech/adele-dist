@@ -78,7 +78,9 @@ for rc in "$HOME/.zshrc" "$HOME/.bash_profile"; do
 done
 
 # ── 설치가 이미 끝난 사람: 내 폴더에서 바로 켠다 ─────────────────
-if grep -qs '"telegram_bot_token"' "$USERDIR/config.json" && grep -qs '"tg_api_id"' "$USERDIR/config.json"; then
+# 칸 이름만 보면 안 된다 — 깔다 만 사람은 칸은 있고 값이 비었다(2026-11-22)
+if grep -qsE '"telegram_bot_token"[[:space:]]*:[[:space:]]*"[^"]+' "$USERDIR/config.json" \
+   && grep -qsE '"tg_api_id"[[:space:]]*:[[:space:]]*("[^"]+|[0-9])' "$USERDIR/config.json"; then
   ok "아델        " "설치돼 있습니다"
   [ -n "${ADELE_START_PREPARE:-}" ] && { echo "READY: $USERDIR"; exit 0; }   # 클로드가 부른 것 — 켜지 않는다
   head2 "클로드 코드를 켭니다"
