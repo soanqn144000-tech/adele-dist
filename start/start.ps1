@@ -94,7 +94,10 @@ if (-not (Find-Exe)) {
   Doing '아델 본체를 받습니다 (60MB 남짓 — 몇 분 걸릴 수 있습니다)'
   try {
     $rel = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/tags/latest" -UseBasicParsing
-    $url = ($rel.assets | Where-Object { $_.name -like 'Adele-win-*.zip' } | Select-Object -First 1).browser_download_url
+    # 옛 판이 같이 걸려 있어도 가장 높은 번호를 고른다(2026-11-22 — 맨 앞 것을 집어 옛 1.0.14 를 받을 뻔했다)
+    $url = ($rel.assets | Where-Object { $_.name -match '^Adele-win-v[\d.]+\.zip$' } |
+            Sort-Object { [version]($_.name -replace '^Adele-win-v' -replace '\.zip$') } -Descending |
+            Select-Object -First 1).browser_download_url
   } catch { $url = $null }
   if (-not $url) { Fail '받을 주소를 못 찾았습니다 (인터넷 연결을 봐 주십시오).' }
   $zip = Join-Path $env:TEMP 'adele-start.zip'
