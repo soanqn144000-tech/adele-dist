@@ -760,6 +760,24 @@ def _ghostty_set(path: Path, kv: list) -> None:
     path.write_text("\n".join(keep) + "\n", encoding="utf-8")
 
 
+def _cmdpath(p) -> str:
+    """훅·상태줄 명령에 넣을 경로. 윈도우 클로드 코드는 깃배시가 없으면 파워셸로 훅을 돌리는데,
+    파워셸은 \"경로\" \"경로\" 를 문법 오류로 본다(2026-11-22 방태준 컴). 그래서 윈도우에서는
+    따옴표 없이 / 로 쓴다(배시·파워셸 둘 다 읽힌다). 띄어쓰기가 있으면 짧은 이름(8.3)으로 바꾼다."""
+    p = str(p)
+    if os.name != "nt":
+        return f'"{p}"'
+    if " " in p:
+        try:
+            import ctypes
+            buf = ctypes.create_unicode_buffer(1024)
+            if ctypes.windll.kernel32.GetShortPathNameW(p, buf, 1024):
+                p = buf.value
+        except Exception:                                    # noqa: BLE001
+            pass
+    return p.replace("\\", "/") if " " not in p else f'"{p}"'
+
+
 def _strip_jsonc(t: str) -> str:
     """윈도우 터미널 설정은 // 주석·끝 쉼표가 섞인 JSON 이다 — 문자열은 건드리지 않고 걷어낸다."""
     out, i, n, q = [], 0, len(t), False
@@ -866,12 +884,12 @@ def 터미널(name: str = "") -> int:
         return 1
     if sp.exists() and not sp.with_suffix(".json.아델전").exists():
         sp.with_suffix(".json.아델전").write_text(sp.read_text(encoding="utf-8"), encoding="utf-8")
-    cs["statusLine"] = {"type": "command", "command": f'"{py}" "{d / "statusline.py"}"',
+    cs["statusLine"] = {"type": "command", "command": f'{_cmdpath(py)} {_cmdpath(d / "statusline.py")}',
                         "refreshInterval": 1}
     hooks = cs.setdefault("hooks", {})
     for ev, st in (("UserPromptSubmit", "working"), ("PreToolUse", "working"),
                    ("Stop", "done"), ("Notification", "review")):
-        cmd = f'"{py}" "{d / "set_state.py"}" {st}'
+        cmd = f'{_cmdpath(py)} {_cmdpath(d / "set_state.py")} {st}'
         lst = [h for h in hooks.get(ev, []) if ".adele_term" not in json.dumps(h)]
         lst.append({"hooks": [{"type": "command", "command": cmd}]})
         hooks[ev] = lst
