@@ -841,6 +841,34 @@ def _wt_autostart(home: Path) -> bool:
     return done
 
 
+def _ps_profile_autostart(home: Path) -> str:
+    """(윈도우) 파워셸 프로필에 '열면 클로드 켜기' 를 적는다. 시작 메뉴의 Windows PowerShell 은
+    터미널 설정을 안 거쳐서 프로필만 먹는다(2026-11-22 방태준 컴에서 확인).
+    다만 윈도우 기본 실행 정책(Restricted)이면 프로필이 안 돈다 — 정책은 보안 설정이라 손대지 않고 알린다.
+    돌려주는 값: 'ok' | 'policy' | 'fail'"""
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-Command",
+                              "[Console]::OutputEncoding=[Text.Encoding]::UTF8; $PROFILE; Get-ExecutionPolicy"],
+                             capture_output=True, text=True, encoding="utf-8", timeout=60).stdout.strip().splitlines()
+        prof, pol = Path(out[0].strip()), (out[-1].strip() if len(out) > 1 else "")
+    except Exception:                                        # noqa: BLE001
+        return "fail"
+    block = ("# >>> 아델 비서 — 파워셸을 열면 클로드 코드를 켠다(setup.py 터미널)\n"
+             "if (-not $env:CLAUDECODE -and -not $env:ADELE_NO_AUTO -and [Environment]::UserInteractive"
+             " -and -not ([Environment]::GetCommandLineArgs() | Where-Object { $_ -match '^-(c|com|command|f|file|enc)' })) {\n"
+             f"  Set-Location -LiteralPath '{home}'; claude\n}}\n"
+             "# <<< 아델 비서\n")
+    try:
+        prof.parent.mkdir(parents=True, exist_ok=True)
+        old = prof.read_text(encoding="utf-8-sig") if prof.exists() else ""
+        import re
+        old = re.sub(r"# >>> 아델 비서.*?# <<< 아델 비서\n?", "", old, flags=re.S)
+        prof.write_text(old.rstrip("\n") + ("\n\n" if old.strip() else "") + block, encoding="utf-8-sig")
+    except OSError:
+        return "fail"
+    return "ok" if pol.lower() in ("remotesigned", "unrestricted", "bypass") else "policy"
+
+
 def 터미널(name: str = "") -> int:
     """Ghostty(맥)·파워셸(윈도우)을 열면 비서가 켜지게 하고, 클로드 코드 맨 아래에 상태줄을 단다.
     name 을 주면 상태줄·안내에 그 이름(영문이면 대문자)을 쓴다."""
@@ -898,10 +926,17 @@ def 터미널(name: str = "") -> int:
     print("상태줄     : 달았습니다 (클로드 코드를 다시 켜면 보입니다)")
     # 3) 윈도우 — 터미널에서 파워셸을 열면 클로드가 바로 켜지게
     if os.name == "nt":
-        if _wt_autostart(home):
+        wt = _wt_autostart(home)
+        pp = _ps_profile_autostart(home)
+        if pp == "ok":
             print("파워셸     : 열면 비서가 바로 켜집니다 (지금 열린 창은 닫았다 다시 여십시오)")
+        elif pp == "policy":
+            print("파워셸     : " + ("윈도우 터미널을 열면 비서가 켜집니다. " if wt else "")
+                  + "시작 메뉴의 Windows PowerShell 은 윈도우 보안 정책(스크립트 막힘) 때문에 아직 안 켜집니다.")
+            print("             본인이 원하면 파워셸에 이 한 줄을 직접 치면 됩니다 — 비서가 대신 바꾸지 않습니다:")
+            print("             Set-ExecutionPolicy -Scope CurrentUser RemoteSigned")
         else:
-            print("파워셸     : 윈도우 터미널 설정을 못 찾아 자동 켜기는 못 달았습니다.")
+            print("파워셸     : " + ("윈도우 터미널을 열면 비서가 켜집니다." if wt else "자동 켜기를 못 달았습니다."))
     # 4) Ghostty — 맥만
     if sys.platform == "darwin":
         if not (Path("/Applications/Ghostty.app").exists()
