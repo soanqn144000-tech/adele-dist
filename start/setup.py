@@ -846,9 +846,14 @@ def _ps_profile_autostart(home: Path) -> str:
     터미널 설정을 안 거쳐서 프로필만 먹는다(2026-11-22 방태준 컴에서 확인).
     다만 윈도우 기본 실행 정책(Restricted)이면 프로필이 안 돈다 — 정책은 보안 설정이라 손대지 않고 알린다.
     돌려주는 값: 'ok' | 'policy' | 'fail'"""
+    # 클로드 코드 안에서 부르면 Bypass 가 물려 와 '허용'으로 잘못 읽힌다(2026-11-22) — 물려받은 값을 지우고,
+    # Process 범위를 뺀 실제 정책(CurrentUser → LocalMachine, 둘 다 없으면 Restricted)을 센다.
+    env = {k: v for k, v in os.environ.items() if k.upper() != "PSEXECUTIONPOLICYPREFERENCE"}
+    q = ("[Console]::OutputEncoding=[Text.Encoding]::UTF8; $PROFILE; "
+         "$p='Restricted'; foreach($s in 'MachinePolicy','UserPolicy','CurrentUser','LocalMachine'){"
+         "$v=Get-ExecutionPolicy -Scope $s; if(\"$v\" -ne 'Undefined'){$p=\"$v\"; break}}; $p")
     try:
-        out = subprocess.run(["powershell", "-NoProfile", "-Command",
-                              "[Console]::OutputEncoding=[Text.Encoding]::UTF8; $PROFILE; Get-ExecutionPolicy"],
+        out = subprocess.run(["powershell", "-NoProfile", "-Command", q], env=env,
                              capture_output=True, text=True, encoding="utf-8", timeout=60).stdout.strip().splitlines()
         prof, pol = Path(out[0].strip()), (out[-1].strip() if len(out) > 1 else "")
     except Exception:                                        # noqa: BLE001
@@ -858,15 +863,24 @@ def _ps_profile_autostart(home: Path) -> str:
              " -and -not ([Environment]::GetCommandLineArgs() | Where-Object { $_ -match '^-(c|com|command|f|file|enc)' })) {\n"
              f"  Set-Location -LiteralPath '{home}'; claude\n}}\n"
              "# <<< 아델 비서\n")
+    allowed = pol.lower() in ("remotesigned", "unrestricted", "bypass")
     try:
-        prof.parent.mkdir(parents=True, exist_ok=True)
-        old = prof.read_text(encoding="utf-8-sig") if prof.exists() else ""
         import re
-        old = re.sub(r"# >>> 아델 비서.*?# <<< 아델 비서\n?", "", old, flags=re.S)
-        prof.write_text(old.rstrip("\n") + ("\n\n" if old.strip() else "") + block, encoding="utf-8-sig")
+        old = prof.read_text(encoding="utf-8-sig") if prof.exists() else ""
+        rest = re.sub(r"# >>> 아델 비서.*?# <<< 아델 비서\n?", "", old, flags=re.S)
+        if not allowed:
+            # 막힌 PC 에 프로필을 두면 파워셸을 열 때마다 빨간 오류가 뜬다 — 쓰지 않고, 전에 쓴 것도 걷는다
+            if old != rest:
+                if rest.strip():
+                    prof.write_text(rest, encoding="utf-8-sig")
+                else:
+                    prof.rename(prof.with_name(prof.name + ".아델끔"))   # 우리 것만 있던 파일 — 지우지 않고 이름만 바꿔 둔다
+            return "policy"
+        prof.parent.mkdir(parents=True, exist_ok=True)
+        prof.write_text(rest.rstrip("\n") + ("\n\n" if rest.strip() else "") + block, encoding="utf-8-sig")
     except OSError:
         return "fail"
-    return "ok" if pol.lower() in ("remotesigned", "unrestricted", "bypass") else "policy"
+    return "ok"
 
 
 def 터미널(name: str = "") -> int:
